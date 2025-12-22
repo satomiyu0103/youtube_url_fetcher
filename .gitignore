@@ -9,6 +9,12 @@ wheels/
 # Virtual environments
 .venv
 
+#data
+data/
+# error_log.txt
+# data/history.csv
+# latest_update.txt
+
 #draft
 draft/
 
