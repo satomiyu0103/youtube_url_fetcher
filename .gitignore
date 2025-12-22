@@ -11,3 +11,6 @@ wheels/
 
 #draft
 draft/
+
+#uv_command
+uv_command.txt

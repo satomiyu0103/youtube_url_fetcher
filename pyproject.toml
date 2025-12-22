@@ -9,3 +9,9 @@ dependencies = [
     "pandas>=2.3.3",
     "yt-dlp>=2025.12.8",
 ]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.1.0",
+    "pre-commit>=4.5.1",
+]
