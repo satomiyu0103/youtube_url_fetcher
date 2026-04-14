@@ -1,8 +1,7 @@
 import yt_dlp
 import pandas as pd
 from datetime import datetime
-
-COLUMNS = ["video_id", "title", "url", "description", "upload_date", "channel_name", "fetched_at"]
+from .history import COLUMNS  # COLUMNS の定義は history.py に一元化
 
 
 def fetch(channel_url: str, count: int) -> pd.DataFrame:
