@@ -27,3 +27,11 @@ CHANNELS = {
 # 2回目以降の取得件数（初回は自動的に全件取得になる）
 # 毎週実行なら 5〜10 で十分
 FETCH_COUNT = 10
+
+
+def channel_paths(name: str):
+    """チャンネル名から (csv_path, txt_path) を返す。パス生成はここで一元管理。"""
+    return (
+        DATA_DIR / f"history_{name}.csv",
+        DATA_DIR / f"latest_update_{name}.txt",
+    )
