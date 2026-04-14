@@ -33,7 +33,10 @@ class App(tk.Tk):
         self.configure(bg=BG)
 
         self.channels = dict(config.CHANNELS)
+        self._cancel_event = threading.Event()
+        self._running = False
         self._build_ui()
+        self._on_count_change()  # 初期ヒント表示
         self._refresh_channel_list()
 
     # ------------------------------------------------------------------ UI構築
@@ -69,6 +72,7 @@ class App(tk.Tk):
             activestyle="none",
         )
         self.ch_listbox.pack(fill="both", expand=True)
+        self.ch_listbox.bind("<<ListboxSelect>>", self._on_select)
 
         form = tk.Frame(left, bg=PANEL, pady=8)
         form.pack(fill="x")
@@ -101,15 +105,17 @@ class App(tk.Tk):
 
         cnt_row = tk.Frame(sett, bg=PANEL)
         cnt_row.pack(anchor="w")
-        tk.Label(cnt_row, text="取得件数（初回は自動で全件取得）",
+        tk.Label(cnt_row, text="取得件数",
                  font=("Segoe UI", 9), bg=PANEL, fg=MUTED).pack(side="left")
         self.fetch_count_var = tk.IntVar(value=config.FETCH_COUNT)
+        self.fetch_count_var.trace_add("write", self._on_count_change)
         tk.Spinbox(cnt_row, from_=0, to=200, textvariable=self.fetch_count_var,
                    width=5, font=("Segoe UI", 10),
                    bg="#1a1a1a", fg=TEXT, buttonbackground=BORDER,
                    relief="flat").pack(side="left", padx=8)
-        tk.Label(cnt_row, text="件", font=("Segoe UI", 9),
-                 bg=PANEL, fg=MUTED).pack(side="left")
+        self.count_hint_var = tk.StringVar()
+        tk.Label(cnt_row, textvariable=self.count_hint_var,
+                 font=("Segoe UI", 9), bg=PANEL, fg=MUTED).pack(side="left")
 
         run_frame = tk.Frame(right, bg=BG)
         run_frame.pack(fill="x", pady=(0, 4))
@@ -120,11 +126,18 @@ class App(tk.Tk):
 
         self.run_sel_btn = self._btn(
             run_frame, "▷  選択チャンネルを実行", self._run_selected, ACCENT, large=True)
+        self.run_sel_btn.configure(state="disabled")
         self.run_sel_btn.pack(fill="x", pady=(0, 4))
 
         self.open_btn = self._btn(
             run_frame, "  結果ファイルを開く（選択中）", self._open_result, BORDER)
-        self.open_btn.pack(fill="x")
+        self.open_btn.configure(state="disabled")
+        self.open_btn.pack(fill="x", pady=(0, 4))
+
+        self.cancel_btn = self._btn(
+            run_frame, "■  キャンセル", self._cancel_task, DANGER)
+        self.cancel_btn.configure(state="disabled")
+        self.cancel_btn.pack(fill="x")
 
         log_frame = tk.Frame(right, bg=PANEL, padx=6, pady=6)
         log_frame.pack(fill="both", expand=True, pady=(8, 0))
@@ -191,7 +204,7 @@ class App(tk.Tk):
             messagebox.showinfo("未選択", "リストからチャンネルを選択してください。", parent=self)
             return
         name = self._selected_name(sel[0])
-        txt_path = config.DATA_DIR / f"latest_update_{name}.txt"
+        _, txt_path = config.channel_paths(name)
         if txt_path.exists():
             subprocess.Popen(["notepad.exe", str(txt_path)])
         else:
@@ -212,7 +225,9 @@ class App(tk.Tk):
         self._start_task([(name, self.channels[name])])
 
     def _start_task(self, targets: list):
-        self._set_buttons(running=True)
+        self._cancel_event.clear()
+        self._running = True
+        self._update_button_states()
         threading.Thread(target=self._run_task, args=(targets,), daemon=True).start()
 
     def _run_task(self, targets: list):
@@ -222,9 +237,11 @@ class App(tk.Tk):
         self._log(f"{'─' * 38}")
 
         for name, url in targets:
+            if self._cancel_event.is_set():
+                self._log("キャンセルされました。")
+                break
             try:
-                csv_path = config.DATA_DIR / f"history_{name}.csv"
-                txt_path = config.DATA_DIR / f"latest_update_{name}.txt"
+                csv_path, txt_path = config.channel_paths(name)
 
                 hist = history.load(csv_path)
                 is_first = hist.empty
@@ -250,9 +267,10 @@ class App(tk.Tk):
                 logging.error(f"[{name}] {e}")
 
         self._log(f"\n{'─' * 38}")
-        self._log("完了")
+        self._log("キャンセルされました。" if self._cancel_event.is_set() else "完了")
         self._log(f"{'─' * 38}\n")
-        self._set_buttons(running=False)
+        self._running = False
+        self.after(0, self._update_button_states)
 
     def _log(self, msg: str):
         def _write():
@@ -262,15 +280,33 @@ class App(tk.Tk):
             self.log_text.configure(state="disabled")
         self.after(0, _write)
 
-    def _set_buttons(self, running: bool):
-        def _update():
-            state = "disabled" if running else "normal"
-            self.run_all_btn.configure(
-                state=state,
-                text="実行中..." if running else "▶  全チャンネルを実行",
-            )
-            self.run_sel_btn.configure(state=state)
-        self.after(0, _update)
+    def _cancel_task(self):
+        self._cancel_event.set()
+        self._log("キャンセルリクエストを送信しました（現在のチャンネル処理完了後に停止します）...")
+        self.cancel_btn.configure(state="disabled")
+
+    def _on_select(self, event=None):
+        self._update_button_states()
+
+    def _on_count_change(self, *args):
+        try:
+            val = self.fetch_count_var.get()
+            self.count_hint_var.set("件（0 = 全件取得）" if val == 0 else "件")
+        except (tk.TclError, AttributeError):
+            pass
+
+    def _update_button_states(self):
+        has_sel = bool(self.ch_listbox.curselection())
+        self.run_all_btn.configure(
+            state="disabled" if self._running else "normal",
+            text="実行中..." if self._running else "▶  全チャンネルを実行",
+        )
+        self.run_sel_btn.configure(
+            state="disabled" if (self._running or not has_sel) else "normal")
+        self.open_btn.configure(
+            state="disabled" if (self._running or not has_sel) else "normal")
+        self.cancel_btn.configure(
+            state="normal" if self._running else "disabled")
 
 
 if __name__ == "__main__":
