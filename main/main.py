@@ -16,8 +16,7 @@ logging.basicConfig(
 
 
 def process_channel(name: str, url: str) -> None:
-    csv_path = config.DATA_DIR / f"history_{name}.csv"
-    txt_path = config.DATA_DIR / f"latest_update_{name}.txt"
+    csv_path, txt_path = config.channel_paths(name)
 
     hist = history.load(csv_path)
     is_first_run = hist.empty
@@ -38,7 +37,7 @@ def process_channel(name: str, url: str) -> None:
 
 
 def main():
-    print(f"YouTube URL Fetcher を開始します")
+    print("YouTube URL Fetcher を開始します")
     print(f"データ保存先: {config.DATA_DIR}")
 
     for name, url in config.CHANNELS.items():
@@ -49,12 +48,6 @@ def main():
             logging.error(f"[{name}] {e}")
 
     print("\n完了しました。")
-
-
-if __name__ == "__main__":
-    main()
-
-    print("🏁 処理終了")
 
 
 if __name__ == "__main__":
